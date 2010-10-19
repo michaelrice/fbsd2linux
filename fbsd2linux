@@ -1,0 +1,121 @@
+#!/usr/bin/env python
+
+"""
+This is a script to help Sysadmins who need to convert a FreeBSD 
+master.passwd file into what Linux uses which is a passwd and shadow file.
+
+Typical usage would be:
+  fbsd2linux --master-passwd=~/bsdfiles/master.passwd --passwd-outfile=~/linuxfiles/passwd --shadow-outfile=~/linuxfiles/shadow --min-uid=500
+
+  This will read and parse the master.passwd and output the passwd and shadow 
+  files in the users home dir in the subfolder linuxfiles
+  in this case the folder ~/linuxfiles must exist
+
+  You can also use the --testing flag and no files will be made
+  It will just print to stdout what it would do.
+
+  DO NOT use --passwd-outfile=/etc/passwd
+  DO NOT use --shadow-outfile=/etc/shadow
+
+When using this script it is best to place the newly created files into the 
+users ~/ then to carefully inspect them to make sure there are no errors.
+Once you are happy with the files you can manually merge them with your production
+files using cat.
+Usage in that case would be:
+  cat ~/linuxfiles/passwd >> /etc/passwd
+  cat ~/linuxfiles/shadow >> /etc/shadow
+
+Even after doing this it may be nessacary for the Sysadmin to edit the pam files
+that allow the UIDs and even the style of salted passwords used on the FreeBSD system.
+
+"""
+__license__ = 'BSD'
+__author__ = 'Michael Rice'
+
+import os, getopt, sys
+
+def main(argv):
+    # here we will define all of our defaults
+    bsdpasswd = os.path.expanduser('~/master.passwd')
+    linuxpasswd = os.path.expanduser('~/linux-passwd')
+    linuxshadow = os.path.expanduser('~/linux-shadow')
+    test = False
+    # normally accounts < 500 are system accounts and we
+    # dont want to move those in most cases
+    minuid = 500
+    try:
+        opts, args = getopt.getopt(argv,'', ['master-passwd=', 'passwd-outfile=', 'shadow-outfile=', 'testing', 'help','min-uid='])
+    except getopt.GetoptError:
+        raise SystemExit 
+    for opt, arg in opts:
+        if opt == '--master-passwd':
+            bsdpasswd = os.path.expanduser(arg)
+        elif opt == '--passwd-outfile':
+            linuxpasswd = os.path.expanduser(arg)
+        elif opt == '--shadow-outfile':
+            linuxshadow = os.path.expanduser(arg)
+        elif opt == '--testing':
+            test = True
+        elif opt == '--help':
+            print usage()
+            raise SystemExit
+        elif opt == '--min-uid':
+            minuid = arg
+        else:
+            assert False, "unhandled option: %s is not supported" % opt
+    # this may seem annoying but I dont really think we should
+    # touch the actual system files. I think the admin should do that
+    # on their own after they make sure the files are correct.
+    # we dont want to hose their system on accident.
+    # get the passwd info from the bsd file
+    # next convert it to linux passwd format
+    make_linux_files(linuxpasswd, linuxshadow, minuid, get_passwd_data(bsdpasswd))
+
+def usage():
+    return __doc__
+
+# pass in a master.passwd file
+def get_passwd_data(filename):
+    # this is the structure of the master.passwd file according to http://nixdoc.net/man-pages/FreeBSD/master.passwd.5.html
+    fields='uname:password:uid:gid:class:change:expire:gecos:home_dir:shell'.split(':')
+    # first we need to make sure we can read the bsd file
+    if(not os.path.isfile(filename)):
+        print "It looks like the master.passwd file you are trying to use does not exist."
+        print "Check the path and try again"
+        raise SystemExit
+    try:
+        FILE = open(filename, "r")
+        passwdfile = []
+        for y in FILE.readlines():
+            y.strip()
+            if(not y.startswith('#')):
+                passwdfile.append(y)
+        FILE.close()
+    # if we cant lets give an error message. The most likely cause of this is permissions
+    except IOError:
+        print "This master.passwd file you want me to read... I cant read it.. take a look at the permissions"
+        raise SystemExit
+    #return a list of dicts
+    return [dict(zip(fields, line.split(':'))) for line in passwdfile]
+
+def make_linux_files(linuxpasswdfile,linuxshadowfile,minuid,passdata):
+    #first we need to make sure we can write to the output files
+    try:
+        PF = open(linuxpasswdfile,"w")
+        SF = open(linuxshadowfile, "w")
+    # odds here are permissions, or read only file system
+    except IOError:
+        print "I am unable to open the output files for writting. Please try again after you check the permissions"
+        print "If you continue to get this message make sure your file system is not mounted read only"
+        raise SystemExit
+    for user in passdata:
+        # this makes sure the password feild is not !! or * or empty
+        # and that we are not moving system accounts like ftp bin cups etc..
+        if(int(user['uid']) >= minuid and len(user['password']) > 3):
+            #print user['uname'],user['password']
+            PF.write(user['uname']+':x:'+user['uid']+":"+user['gid']+':'+user['gecos']+':'+user['home_dir']+':'+user['shell'])
+    #print "poop, poop is raining from the ceiling"
+
+if(__name__ == '__main__'):
+    #usrinfo = get_passwd_data('/home/errr/fbsd/master.passwd')
+    main(sys.argv[1:])
