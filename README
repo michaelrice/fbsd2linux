@@ -1,0 +1,11 @@
+This is a python script that will
+assist Systems Administrators in
+migrating users from a FreeBSD box
+using master.passwd files to a Linux
+box that uses shadow and passwd files.
+The goal is to maintain UIDs GIDs and 
+passwords.
+
+For more information please visit 
+http://www.toastcoders.com/fbsd2linux
+or run fbsd2linux --help
