@@ -29,7 +29,7 @@ that allow the UIDs and even the style of salted passwords used on the FreeBSD s
 __license__ = 'BSD'
 __author__ = 'Michael Rice'
 
-import os, getopt, sys
+import os, getopt, sys, math, time
 
 def main(argv):
     # here we will define all of our defaults
@@ -40,8 +40,9 @@ def main(argv):
     # normally accounts < 500 are system accounts and we
     # dont want to move those in most cases
     minuid = 500
-    minchpassage = 0
-    maxpassage = 99999
+    minchpasswdage = 0
+    maxpasswdage = 99999
+    passwarn = 7
 
     try:
         opts, args = getopt.getopt(argv,'', ['master-passwd=', 'passwd-outfile=', 'shadow-outfile=', 
@@ -70,7 +71,7 @@ def main(argv):
     # we dont want to hose their system on accident.
     # get the passwd info from the bsd file
     # next convert it to linux passwd format
-    make_linux_files(linuxpasswd, linuxshadow, minuid,minchpasswdage,maxpasswdage, get_passwd_data(bsdpasswd))
+    make_linux_files(linuxpasswd, linuxshadow, minuid,minchpasswdage,maxpasswdage, passwarn, get_passwd_data(bsdpasswd))
 
 def usage():
     return __doc__
@@ -99,7 +100,7 @@ def get_passwd_data(filename):
     #return a list of dicts
     return [dict(zip(fields, line.split(':'))) for line in passwdfile]
 
-def make_linux_files(linuxpasswdfile,linuxshadowfile,minuid,minpassage,maxpassage,passdata):
+def make_linux_files(linuxpasswdfile,linuxshadowfile,minuid,minpassage,maxpassage,warn,passdata):
     #first we need to make sure we can write to the output files
     try:
         PF = open(linuxpasswdfile,"w")
@@ -113,8 +114,11 @@ def make_linux_files(linuxpasswdfile,linuxshadowfile,minuid,minpassage,maxpassag
         # this makes sure the password feild is not !! or * or empty
         # and that we are not moving system accounts like ftp bin cups etc..
         if(int(user['uid']) >= minuid and len(user['password']) > 3):
+            #username:passwd:uid:gid:user info:homedir:shell
             PF.write(user['uname']+':x:'+user['uid']+":"+user['gid']+':'+user['gecos']+':'+user['home_dir']+':'+user['shell'])
-            SF.write(user['uname']+':'+user['password']+':'+user['uid']+":"+user['gid']+':'+user['gecos']+':'+user['home_dir']+':'+user['shell'])
+            #username:passwd:lastchange:min:max:warn:inactive:expire
+            lchng = int(math.ceil((math.floor(time.time())/86400.)))
+            SF.write(user['uname'] + ':' + user['password'] + ':' + str(lchng) + ':'+ str(minpassage) + ':' +str(maxpassage) + ':' + str(warn) + ':::\n')
 
 if(__name__ == '__main__'):
     main(sys.argv[1:])
